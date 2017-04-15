@@ -26,11 +26,13 @@ public class Wamp {
         void onConnected();
         void onReceiveOffer(String sdp);
         void onReceiveAnswer(String sdp);
+        void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
     }
 
     private static final String TAG = "Wamp";
     private static final String AnswerTopic = "com.nakadoribook.webrtc.answer";
     private static final String OfferTopic = "com.nakadoribook.webrtc.offer";
+    private static final String CandidateTopic = "com.nakadoribook.webrtc.candidate";
 
     private final Activity activity;
     private WampClient wampClient;
@@ -53,6 +55,10 @@ public class Wamp {
 
     public void publishAnswer(String sdp){
         _publishAnswer(sdp);
+    }
+
+    public void publishIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
+        _publishIceCandidate(sdp, sdpMid, sdpMLineIndex);
     }
 
     // implements --------
@@ -108,6 +114,22 @@ public class Wamp {
                                 @Override
                                 public void call(Throwable arg0) {}
                             });
+
+                            wampClient.makeSubscription(CandidateTopic).subscribe(new Action1<PubSubData>(){
+                                @Override
+                                public void call(PubSubData arg0) {
+                                    JsonNode json = arg0.arguments().get(0);
+                                    String sdp = json.get("sdp").asText();
+                                    String sdpMid = json.get("sdpMid").asText();
+                                    int sdpMLineIndex = json.get("sdpMLineIndex").asInt();
+
+                                    callbacks.onIceCandidate(sdp, sdpMid, sdpMLineIndex);
+                                }
+
+                            }, new Action1<Throwable>(){
+                                @Override
+                                public void call(Throwable arg0) {}
+                            });
                         }
                     }
                 }, new Action1<Throwable>() {
@@ -138,6 +160,17 @@ public class Wamp {
         node.put("sdp", sdp);
 
         wampClient.publish(AnswerTopic, node);
+    }
+
+    public void _publishIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
+        final ObjectMapper mapper = new ObjectMapper();
+        ObjectNode node = mapper.createObjectNode();
+        node.put("type", "candidate");
+        node.put("candidate", sdp);
+        node.put("id", sdpMid);
+        node.put("kRTCICECandidateMLineIndexKey", sdpMLineIndex);
+
+        wampClient.publish(CandidateTopic, node);
     }
 
 }

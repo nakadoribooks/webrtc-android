@@ -3,7 +3,6 @@ package com.nakadoribooks.webrtcexample;
 import android.app.Activity;
 import android.content.Context;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.view.WindowManager;
 
 import org.webrtc.*;
@@ -20,6 +19,7 @@ public class WebRTC implements PeerConnection.Observer {
     public static interface WebRTCCallbacks{
         void onCreateLocalSdp(String sdp);
         void didReceiveRemoteStream();
+        void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
     }
 
     private static abstract class SkeletalSdpObserver implements SdpObserver{
@@ -80,6 +80,11 @@ public class WebRTC implements PeerConnection.Observer {
         _receiveAnswer(sdp);
     }
 
+    void addIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
+        IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, sdp);
+        peerConnection.addIceCandidate(iceCandidate);
+    }
+
     // implements -------------
 
     private void setupPeerConnection(){
@@ -117,8 +122,15 @@ public class WebRTC implements PeerConnection.Observer {
                 // createAnswer
                 peerConnection.createAnswer(new SkeletalSdpObserver() {
                     @Override
-                    public void onCreateSuccess(SessionDescription sessionDescription) {
-                        peerConnection.setLocalDescription(new SkeletalSdpObserver() {}, sessionDescription);
+                    public void onCreateSuccess(final SessionDescription sessionDescription) {
+                        peerConnection.setLocalDescription(new SkeletalSdpObserver() {
+
+                            @Override
+                            public void onSetSuccess() {
+                                callbacks.onCreateLocalSdp(sessionDescription.description);
+                            }
+
+                        }, sessionDescription);
                     }
                 }, WebRTCUtil.answerConnectionConstraints());
 
@@ -129,8 +141,15 @@ public class WebRTC implements PeerConnection.Observer {
     private void _createOffer(){
         peerConnection.createOffer(new SkeletalSdpObserver() {
             @Override
-            public void onCreateSuccess(SessionDescription sessionDescription) {
-                peerConnection.setLocalDescription(new SkeletalSdpObserver() {}, sessionDescription);
+            public void onCreateSuccess(final SessionDescription sessionDescription) {
+                peerConnection.setLocalDescription(new SkeletalSdpObserver() {
+
+                    @Override
+                    public void onSetSuccess() {
+                        callbacks.onCreateLocalSdp(sessionDescription.description);
+                    }
+
+                }, sessionDescription);
             }
         }, WebRTCUtil.offerConnectionConstraints());
     }
@@ -214,18 +233,13 @@ public class WebRTC implements PeerConnection.Observer {
     @Override
     public void onAddTrack(RtpReceiver rtpReceiver, MediaStream[] mediaStreams) {}
     @Override
-    public void onIceCandidate(IceCandidate iceCandidate) {}
-    @Override
     public void onIceCandidatesRemoved(IceCandidate[] iceCandidates) {}
+    @Override
+    public void onIceGatheringChange(PeerConnection.IceGatheringState iceGatheringState) {}
 
     @Override
-    public void onIceGatheringChange(PeerConnection.IceGatheringState iceGatheringState) {
-        Log.d(TAG, "onIceGatheringChange");
-        if(iceGatheringState == PeerConnection.IceGatheringState.COMPLETE){
-            Log.d(TAG, "Complete");
-            SessionDescription localSdp = peerConnection.getLocalDescription();
-            callbacks.onCreateLocalSdp(localSdp.description);
-        }
+    public void onIceCandidate(IceCandidate iceCandidate) {
+        callbacks.onIceCandidate(iceCandidate.sdp, iceCandidate.sdpMid, iceCandidate.sdpMLineIndex);
     }
 
     @Override

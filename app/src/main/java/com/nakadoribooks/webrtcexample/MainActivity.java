@@ -106,6 +106,11 @@ public class MainActivity extends AppCompatActivity {
 
                 webRTC.receiveAnswer(sdp);
             }
+
+            @Override
+            public void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex) {
+                webRTC.addIceCandidate(sdp, sdpMid, sdpMLineIndex);
+            }
         });
     }
 
@@ -125,6 +130,11 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void didReceiveRemoteStream() {
                 changeState(State.Done);
+            }
+
+            @Override
+            public void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex) {
+                wamp.publishIceCandidate(sdp, sdpMid, sdpMLineIndex);
             }
         });
         webRTC.startCapture();
