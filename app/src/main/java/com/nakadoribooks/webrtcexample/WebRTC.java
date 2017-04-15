@@ -3,6 +3,7 @@ package com.nakadoribooks.webrtcexample;
 import android.app.Activity;
 import android.content.Context;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.WindowManager;
 
 import org.webrtc.*;
@@ -219,7 +220,9 @@ public class WebRTC implements PeerConnection.Observer {
 
     @Override
     public void onIceGatheringChange(PeerConnection.IceGatheringState iceGatheringState) {
+        Log.d(TAG, "onIceGatheringChange");
         if(iceGatheringState == PeerConnection.IceGatheringState.COMPLETE){
+            Log.d(TAG, "Complete");
             SessionDescription localSdp = peerConnection.getLocalDescription();
             callbacks.onCreateLocalSdp(localSdp.description);
         }
