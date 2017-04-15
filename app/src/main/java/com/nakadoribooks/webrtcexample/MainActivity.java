@@ -1,124 +1,199 @@
 package com.nakadoribooks.webrtcexample;
 
 import android.Manifest;
+import android.graphics.Color;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
-
-import java.util.concurrent.TimeUnit;
-
-import rx.android.app.AppObservable;
-import rx.functions.Action0;
-import rx.functions.Action1;
-import ws.wamp.jawampa.PubSubData;
-import ws.wamp.jawampa.WampClient;
-import ws.wamp.jawampa.WampClientBuilder;
-import ws.wamp.jawampa.WampError;
-
-import org.webrtc.*;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int REQUEST_CODE_CAMERA_PERMISSION = 1;
-    private WampClient wamp;
-    private WebRTC webRTC;
+    private enum State{
+        Disconnected
+        , Connecting
+        , Connected
+        , Offering
+        , ReceivedOffer
+        , CreatingAnswer
+        , Done
+    }
 
-    private static final String AnswerTopic = "com.nakadoribook.webrtc.answer";
-    private static final String OfferTopic = "com.nakadoribook.webrtc.offer";
-    private static final String CandidateTopic = "com.nakadoribook.webrtc.candidate";
+    private static final String TAG = "MainActivity";
+    private static final int REQUEST_CODE_CAMERA_PERMISSION = 1;
+    private WebRTC webRTC;
+    private Wamp wamp;
+    private State state = State.Disconnected;
+
+    private Button controlButton;
+    private TextView statusText;
+    private boolean typeOffer = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // checkPermission → onRequestPermissionsResult → setup → start
+        // getView
+        controlButton = (Button) findViewById(R.id.control_button);
+        statusText = (TextView) findViewById(R.id.status_label);
+
+        // registerEvent
+        findViewById(R.id.control_button).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                onTapButton();
+            }
+        });
+
+        // wamp
+        wamp = new Wamp(this);
+
+        // checkPermission → onRequestPermissionsResult → startWebRTC
         checkPermission();
-    }
-
-    private void checkPermission(){
-        String[] permissioins = new String[]{ Manifest.permission.CAMERA};
-        ActivityCompat.requestPermissions(this, permissioins, REQUEST_CODE_CAMERA_PERMISSION);
-    }
-
-    private void setup(){
-        setupWamp();
-        setupWebRTC();
-    }
-
-    private void setupWebRTC(){
-        webRTC = new WebRTC(this);
-    }
-
-    private void setupWamp() {
-
-        WampClientBuilder builder = new WampClientBuilder();
-
-        // Build two clients
-        try {
-
-            builder.withUri("ws://192.168.1.2:8000")
-                    .withRealm("realm1")
-                    .withInfiniteReconnects()
-                    .withReconnectInterval(3, TimeUnit.SECONDS);
-            wamp = builder.build();
-        } catch (WampError e) {
-            return;
-        }
-
-        AppObservable.bindActivity(this, wamp.statusChanged())
-                .subscribe(new Action1<WampClient.Status>() {
-                    @Override
-                    public void call(final WampClient.Status status) {
-
-                        Log.d("kawa", "Status changed to " + status);
-                        if (status == WampClient.Status.Connected) {
-
-                            Log.d("kawa", "connected");
-                            wamp.makeSubscription(OfferTopic).subscribe(new Action1<PubSubData>(){
-                                @Override
-                                public void call(PubSubData arg0) {
-                                    Log.d("kawa", "called " + arg0.toString());
-                                }
-
-                            }, new Action1<Throwable>(){
-                                @Override
-                                public void call(Throwable arg0) {
-                                    Log.d("kawa", "Throwabled " + arg0.toString());
-                                }
-                            });
-                        }
-                    }
-                }, new Action1<Throwable>() {
-                    @Override
-                    public void call(final Throwable t) {
-                        Log.d("kawa", "Session ended with error " + t);
-                    }
-                }, new Action0() {
-                    @Override
-                    public void call() {
-                        Log.d("kawa", "Session ended normally");
-                    }
-                });
-
-        wamp.open();
-    }
-
-    private void start(){
-        webRTC.startCapture();
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode,
                                            String permissions[], int[] grantResults) {
-        Logging.d("TAG", "onActivityResult 1");
-
         if (requestCode != REQUEST_CODE_CAMERA_PERMISSION)
             return;
 
-        setup();
-        start();
+        startWebRTC();
+    }
+
+    private void checkPermission(){
+        String[] permissioins = new String[]{ Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
+        ActivityCompat.requestPermissions(this, permissioins, REQUEST_CODE_CAMERA_PERMISSION);
+    }
+
+    private void onTapButton(){
+        if(state == State.Disconnected){
+            changeState(State.Connecting);
+            connect();
+        }else if(state == State.Connected){
+            typeOffer = true;
+            changeState(State.Offering);
+            stateOffering();
+            webRTC.createOffer();
+        }
+    }
+
+    private void connect(){
+        wamp.connect(new Wamp.WampCallbacks() {
+
+            @Override
+            public void onConnected() {
+                changeState(State.Connected);
+            }
+
+            @Override
+            public void onReceiveOffer(String sdp) {
+                if(typeOffer){
+                    return;
+                }
+                changeState(State.CreatingAnswer);
+                webRTC.receiveOffer(sdp);
+            }
+
+            @Override
+            public void onReceiveAnswer(String sdp) {
+                if(!typeOffer){
+                    return;
+                }
+
+                webRTC.receiveAnswer(sdp);
+            }
+        });
+    }
+
+    private void startWebRTC(){
+
+        webRTC = new WebRTC(this);
+        webRTC.connect(new WebRTC.WebRTCCallbacks() {
+            @Override
+            public void onCreateLocalSdp(String sdp) {
+                if(typeOffer){
+                    wamp.publishOffer(sdp);
+                }else{
+                    wamp.publishAnswer(sdp);
+                }
+            }
+
+            @Override
+            public void didReceiveRemoteStream() {
+                changeState(State.Done);
+            }
+        });
+        webRTC.startCapture();
+    }
+
+    // view ---------------
+
+    private void stateConnecting(){
+        statusText.setText("Connecting");
+        controlButton.setText("Connecting...");
+        controlButton.setEnabled(false);
+    }
+
+    private void stateConnected(){
+        statusText.setText("connected");
+        statusText.setTextColor(Color.BLUE);
+        controlButton.setText("Send Offer");
+        controlButton.setEnabled(true);
+    }
+
+    private void stateOffering(){
+        statusText.setText("Offering...");
+        controlButton.setText("Offering...");
+        controlButton.setEnabled(false);
+    }
+
+    private void stateReceivedOffer(){
+        statusText.setText("ReceivedOffer");
+        controlButton.setText("ReceivedOffer");
+        controlButton.setEnabled(false);
+    }
+
+    private void stateCreatingAnswer(){
+        statusText.setText("CreatingAnswer...");
+        controlButton.setText("CreatingAnswer...");
+        controlButton.setEnabled(false);
+    }
+
+    private void stateDone(){
+        statusText.setText("OK!");
+        controlButton.setText("OK!");
+        controlButton.setEnabled(false);
+    }
+
+    private void changeState(final State state){
+        this.state = state;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                switch (state){
+                    case Connected:
+                        stateConnected();
+                        break;
+                    case Connecting:
+                        stateConnecting();
+                        break;
+                    case CreatingAnswer:
+                        stateCreatingAnswer();
+                        break;
+                    case ReceivedOffer:
+                        stateReceivedOffer();
+                        break;
+                    case Done:
+                        stateDone();
+                    default:
+                        break;
+                }
+            }
+        });
     }
 
 }
