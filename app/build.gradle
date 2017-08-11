@@ -36,6 +36,8 @@ dependencies {
     testCompile 'junit:junit:4.12'
     compile 'ws.wamp.jawampa:jawampa:0.2.0'
     compile 'io.reactivex:rxandroid:0.24.0'
+//    compile group: 'ws.wamp.jawampa', name: 'jawampa-netty', version: '0.4.1'
+
 }
 
 repositories{

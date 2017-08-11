@@ -3,6 +3,7 @@ package com.nakadoribooks.webrtcexample;
 import android.app.Activity;
 import android.content.Context;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.WindowManager;
 
 import org.webrtc.*;
@@ -17,10 +18,13 @@ import java.util.List;
 public class WebRTC implements PeerConnection.Observer {
 
     public static interface WebRTCCallbacks{
-        void onCreateLocalSdp(String sdp);
+        void onCreateOffer(String sdp);
+        void onCreateAnswer(String sdp);
         void didReceiveRemoteStream();
         void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
     }
+
+    
 
     private static abstract class SkeletalSdpObserver implements SdpObserver{
 
@@ -38,34 +42,65 @@ public class WebRTC implements PeerConnection.Observer {
 
     private static final String TAG = "WebRTC";
 
-    private final Activity activity;
-    private WebRTCCallbacks callbacks;
-    private PeerConnectionFactory factory;
+    private static Activity activity;
+    private final WebRTCCallbacks callbacks;
+    private static PeerConnectionFactory factory;
     private PeerConnection peerConnection;
-    private MediaStream localStream;
-    private VideoCapturer videoCapturer;
-    private EglBase eglBase;
+    private static MediaStream localStream;
+    private static VideoCapturer videoCapturer;
+    private static EglBase eglBase;
 
-    private VideoTrack localVideoTrack;
-    private VideoRenderer localRenderer;
+    private static VideoTrack localVideoTrack;
+    private static VideoRenderer localRenderer;
+
     private VideoRenderer remoteRenderer;
 
-    WebRTC(Activity activity){
-        this.activity = activity;
+    WebRTC(WebRTCCallbacks callbacks){
+        this.callbacks = callbacks;
+
+        // create PeerConnection
+        List<PeerConnection.IceServer> iceServers = Arrays.asList(new PeerConnection.IceServer("stun:stun.l.google.com:19302"));
+        peerConnection = factory.createPeerConnection(iceServers, WebRTCUtil.peerConnectionConstraints(), this);
+        peerConnection.addStream(localStream);
     }
 
     // interface -----------------
 
-    public void connect(WebRTCCallbacks callbacks){
-        this.callbacks = callbacks;
-        setupPeerConnection();
-        setupLocalStream();
+    static void setup(Activity activity){
+        WebRTC.activity = activity;
+        eglBase = EglBase.create();
 
-        peerConnection.addStream(localStream);
-    }
+        // initialize Factory
+        PeerConnectionFactory.initializeAndroidGlobals(activity.getApplicationContext(), true);
+        PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
+        factory = new PeerConnectionFactory(options);
+        factory.setVideoHwAccelerationOptions(eglBase.getEglBaseContext(), eglBase.getEglBaseContext());
 
-    public void startCapture(){
-        _startCapture();
+        localStream = factory.createLocalMediaStream("android_local_stream");
+
+        // videoTrack
+        videoCapturer = createCameraCapturer(new Camera2Enumerator(activity));
+        VideoSource localVideoSource = factory.createVideoSource(videoCapturer);
+        localVideoTrack = factory.createVideoTrack("android_local_videotrack", localVideoSource);
+        localStream.addTrack(localVideoTrack);
+
+        // render
+        localRenderer = setupRenderer(R.id.local_render_view, activity);
+        localVideoTrack.addRenderer(localRenderer);
+
+        // audioTrack
+        AudioSource audioSource = factory.createAudioSource(WebRTCUtil.mediaStreamConstraints());
+        AudioTrack audioTrack = factory.createAudioTrack("android_local_audiotrack", audioSource);
+        localStream.addTrack(audioTrack);
+
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        WindowManager windowManager =
+                (WindowManager) activity.getApplication().getSystemService(Context.WINDOW_SERVICE);
+        windowManager.getDefaultDisplay().getRealMetrics(displayMetrics);
+        int videoWidth = displayMetrics.widthPixels;
+        int videoHeight = displayMetrics.heightPixels;
+
+        videoCapturer.startCapture(videoWidth, videoHeight, 30);
     }
 
     public void createOffer(){
@@ -87,21 +122,6 @@ public class WebRTC implements PeerConnection.Observer {
 
     // implements -------------
 
-    private void setupPeerConnection(){
-        // rendereContext
-        eglBase = EglBase.create();
-
-        // initialize Factory
-        PeerConnectionFactory.initializeAndroidGlobals(activity.getApplicationContext(), true);
-        PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
-        factory = new PeerConnectionFactory(options);
-        factory.setVideoHwAccelerationOptions(eglBase.getEglBaseContext(), eglBase.getEglBaseContext());
-
-        // create PeerConnection
-        List<PeerConnection.IceServer> iceServers = Arrays.asList(new PeerConnection.IceServer("stun:stun.l.google.com:19302"));
-        peerConnection = factory.createPeerConnection(iceServers, WebRTCUtil.peerConnectionConstraints(), this);
-    }
-
     private void _receiveAnswer(String sdp){
         SessionDescription remoteDescription = new SessionDescription(SessionDescription.Type.ANSWER, sdp);
         peerConnection.setRemoteDescription(new SkeletalSdpObserver() {
@@ -113,21 +133,26 @@ public class WebRTC implements PeerConnection.Observer {
     }
 
     private void _receiveOffer(String sdp){
+        Log.d("WebRTC", "_receiveOffer 1");
+
         // setRemoteDescription
         SessionDescription remoteDescription = new SessionDescription(SessionDescription.Type.OFFER, sdp);
         peerConnection.setRemoteDescription(new SkeletalSdpObserver() {
             @Override
             public void onSetSuccess() {
+                Log.d("WebRTC", "_receiveOffer 2");
 
                 // createAnswer
                 peerConnection.createAnswer(new SkeletalSdpObserver() {
                     @Override
                     public void onCreateSuccess(final SessionDescription sessionDescription) {
+                        Log.d("WebRTC", "_receiveOffer 3");
                         peerConnection.setLocalDescription(new SkeletalSdpObserver() {
 
                             @Override
                             public void onSetSuccess() {
-                                callbacks.onCreateLocalSdp(sessionDescription.description);
+                                Log.d("WebRTC", "_receiveOffer 4");
+                                callbacks.onCreateAnswer(sessionDescription.description);
                             }
 
                         }, sessionDescription);
@@ -135,18 +160,27 @@ public class WebRTC implements PeerConnection.Observer {
                 }, WebRTCUtil.answerConnectionConstraints());
 
             }
+
+            @Override
+            public void onSetFailure(String s) {
+                Log.d("WebRTC", " ------------ onSetFailure ----------------");
+                Log.d("WebRTC", s);
+            }
         }, remoteDescription);
     }
 
     private void _createOffer(){
+        Log.d("WebRtc", "_createOffer 1");
         peerConnection.createOffer(new SkeletalSdpObserver() {
             @Override
             public void onCreateSuccess(final SessionDescription sessionDescription) {
+                Log.d("WebRtc", "_createOffer 2");
                 peerConnection.setLocalDescription(new SkeletalSdpObserver() {
 
                     @Override
                     public void onSetSuccess() {
-                        callbacks.onCreateLocalSdp(sessionDescription.description);
+                        Log.d("WebRtc", "_createOffer 3");
+                        callbacks.onCreateOffer(sessionDescription.description);
                     }
 
                 }, sessionDescription);
@@ -154,38 +188,7 @@ public class WebRTC implements PeerConnection.Observer {
         }, WebRTCUtil.offerConnectionConstraints());
     }
 
-    private void setupLocalStream() {
-
-        localStream = factory.createLocalMediaStream("android_local_stream");
-
-        // videoTrack
-        videoCapturer = createCameraCapturer(new Camera2Enumerator(activity));
-        VideoSource localVideoSource = factory.createVideoSource(videoCapturer);
-        localVideoTrack = factory.createVideoTrack("android_local_videotrack", localVideoSource);
-        localStream.addTrack(localVideoTrack);
-
-        // render
-        localRenderer = setupRenderer(R.id.local_render_view);
-        localVideoTrack.addRenderer(localRenderer);
-
-        // audioTrack
-        AudioSource audioSource = factory.createAudioSource(WebRTCUtil.mediaStreamConstraints());
-        AudioTrack audioTrack = factory.createAudioTrack("android_local_audiotrack", audioSource);
-        localStream.addTrack(audioTrack);
-    }
-
-    private void _startCapture(){
-        DisplayMetrics displayMetrics = new DisplayMetrics();
-        WindowManager windowManager =
-                (WindowManager) activity.getApplication().getSystemService(Context.WINDOW_SERVICE);
-        windowManager.getDefaultDisplay().getRealMetrics(displayMetrics);
-        int videoWidth = displayMetrics.widthPixels;
-        int videoHeight = displayMetrics.heightPixels;
-
-        videoCapturer.startCapture(videoWidth, videoHeight, 30);
-    }
-
-    private VideoRenderer setupRenderer(int viewId){
+    private static VideoRenderer setupRenderer(int viewId, Activity activity){
 
         SurfaceViewRenderer renderer = (SurfaceViewRenderer) activity.findViewById(viewId);
         renderer.init(eglBase.getEglBaseContext(), null);
@@ -196,11 +199,11 @@ public class WebRTC implements PeerConnection.Observer {
         return new VideoRenderer(renderer);
     }
 
-    private VideoCapturer createCameraCapturer(CameraEnumerator enumerator) {
+    private static VideoCapturer createCameraCapturer(CameraEnumerator enumerator) {
         return createBackCameraCapturer(enumerator);
     }
 
-    private VideoCapturer createBackCameraCapturer(CameraEnumerator enumerator) {
+    private static VideoCapturer createBackCameraCapturer(CameraEnumerator enumerator) {
         final String[] deviceNames = enumerator.getDeviceNames();
 
         for (String deviceName : deviceNames) {
@@ -253,7 +256,7 @@ public class WebRTC implements PeerConnection.Observer {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                remoteRenderer = setupRenderer(R.id.remote_render_view);
+                remoteRenderer = setupRenderer(R.id.remote_render_view, activity);
                 remoteVideoTrack.addRenderer(remoteRenderer);
 
                 callbacks.didReceiveRemoteStream();
