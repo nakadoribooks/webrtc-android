@@ -20,11 +20,9 @@ public class WebRTC implements PeerConnection.Observer {
     public static interface WebRTCCallbacks{
         void onCreateOffer(String sdp);
         void onCreateAnswer(String sdp);
-        void didReceiveRemoteStream();
+        void didReceiveRemoteStream(MediaStream mediaStream);
         void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
     }
-
-    
 
     private static abstract class SkeletalSdpObserver implements SdpObserver{
 
@@ -66,9 +64,9 @@ public class WebRTC implements PeerConnection.Observer {
 
     // interface -----------------
 
-    static void setup(Activity activity){
+    static void setup(Activity activity, EglBase eglBase){
         WebRTC.activity = activity;
-        eglBase = EglBase.create();
+        WebRTC.eglBase = eglBase;
 
         // initialize Factory
         PeerConnectionFactory.initializeAndroidGlobals(activity.getApplicationContext(), true);
@@ -104,54 +102,37 @@ public class WebRTC implements PeerConnection.Observer {
     }
 
     public void createOffer(){
-        _createOffer();
+        peerConnection.createOffer(new SkeletalSdpObserver() {
+            @Override
+            public void onCreateSuccess(final SessionDescription sessionDescription) {
+                peerConnection.setLocalDescription(new SkeletalSdpObserver() {
+
+                    @Override
+                    public void onSetSuccess() {
+                        callbacks.onCreateOffer(sessionDescription.description);
+                    }
+
+                }, sessionDescription);
+            }
+        }, WebRTCUtil.offerConnectionConstraints());
     }
 
     public void receiveOffer(String sdp){
-        _receiveOffer(sdp);
-    }
-
-    public void receiveAnswer(String sdp){
-        _receiveAnswer(sdp);
-    }
-
-    void addIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
-        IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, sdp);
-        peerConnection.addIceCandidate(iceCandidate);
-    }
-
-    // implements -------------
-
-    private void _receiveAnswer(String sdp){
-        SessionDescription remoteDescription = new SessionDescription(SessionDescription.Type.ANSWER, sdp);
-        peerConnection.setRemoteDescription(new SkeletalSdpObserver() {
-            @Override
-            public void onSetSuccess() {
-
-            }
-        }, remoteDescription);
-    }
-
-    private void _receiveOffer(String sdp){
-        Log.d("WebRTC", "_receiveOffer 1");
 
         // setRemoteDescription
         SessionDescription remoteDescription = new SessionDescription(SessionDescription.Type.OFFER, sdp);
         peerConnection.setRemoteDescription(new SkeletalSdpObserver() {
             @Override
             public void onSetSuccess() {
-                Log.d("WebRTC", "_receiveOffer 2");
 
                 // createAnswer
                 peerConnection.createAnswer(new SkeletalSdpObserver() {
                     @Override
                     public void onCreateSuccess(final SessionDescription sessionDescription) {
-                        Log.d("WebRTC", "_receiveOffer 3");
                         peerConnection.setLocalDescription(new SkeletalSdpObserver() {
 
                             @Override
                             public void onSetSuccess() {
-                                Log.d("WebRTC", "_receiveOffer 4");
                                 callbacks.onCreateAnswer(sessionDescription.description);
                             }
 
@@ -169,24 +150,22 @@ public class WebRTC implements PeerConnection.Observer {
         }, remoteDescription);
     }
 
-    private void _createOffer(){
-        Log.d("WebRtc", "_createOffer 1");
-        peerConnection.createOffer(new SkeletalSdpObserver() {
+    public void receiveAnswer(String sdp){
+        SessionDescription remoteDescription = new SessionDescription(SessionDescription.Type.ANSWER, sdp);
+        peerConnection.setRemoteDescription(new SkeletalSdpObserver() {
             @Override
-            public void onCreateSuccess(final SessionDescription sessionDescription) {
-                Log.d("WebRtc", "_createOffer 2");
-                peerConnection.setLocalDescription(new SkeletalSdpObserver() {
+            public void onSetSuccess() {
 
-                    @Override
-                    public void onSetSuccess() {
-                        Log.d("WebRtc", "_createOffer 3");
-                        callbacks.onCreateOffer(sessionDescription.description);
-                    }
-
-                }, sessionDescription);
             }
-        }, WebRTCUtil.offerConnectionConstraints());
+        }, remoteDescription);
     }
+
+    void addIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
+        IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, sdp);
+        peerConnection.addIceCandidate(iceCandidate);
+    }
+
+    // implements -------------
 
     private static VideoRenderer setupRenderer(int viewId, Activity activity){
 
@@ -247,22 +226,7 @@ public class WebRTC implements PeerConnection.Observer {
 
     @Override
     public void onAddStream(MediaStream mediaStream) {
-
-        if (mediaStream.videoTracks.size() == 0){
-            return;
-        }
-
-        final VideoTrack remoteVideoTrack = mediaStream.videoTracks.getFirst();
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                remoteRenderer = setupRenderer(R.id.remote_render_view, activity);
-                remoteVideoTrack.addRenderer(remoteRenderer);
-
-                callbacks.didReceiveRemoteStream();
-            }
-        });
-
+        callbacks.didReceiveRemoteStream(mediaStream);
     }
 }
 

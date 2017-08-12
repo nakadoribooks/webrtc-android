@@ -21,7 +21,7 @@
                 android:id="@+id/local_video_layout"
                 android:layout_width="100dp"
                 android:layout_height="150dp"
-                android:layout_marginTop="300dp"
+                android:layout_marginTop="400dp"
                 android:layout_marginLeft="20dp"
                 android:background="@color/colorAccent">
                 <org.webrtc.SurfaceViewRenderer
@@ -31,34 +31,15 @@
                     />
             </FrameLayout>
 
-            <FrameLayout
-                android:id="@+id/remote_video_layout"
+            <GridLayout
+                android:id="@+id/remote_view_container"
                 android:layout_width="match_parent"
                 android:layout_height="350dp"
-                android:background="@color/colorPrimary">
-                <org.webrtc.SurfaceViewRenderer
-                    android:id="@+id/remote_render_view"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
-            </FrameLayout>
+                android:columnCount="2"
+                android:rowCount="3">
+            </GridLayout>
 
         </RelativeLayout>
-
-        <android.support.v7.widget.AppCompatTextView
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:text=""
-            android:layout_weight="1"
-            android:textAlignment="center"
-            android:textSize="20dp"
-            android:id="@+id/status_label"/>
-        <android.support.v7.widget.AppCompatButton
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:text="Connect"
-            android:id="@+id/control_button"
-            android:textSize="20dp"
-            android:layout_weight="2"/>
     </android.support.v7.widget.LinearLayoutCompat>
 
 </android.support.constraint.ConstraintLayout>

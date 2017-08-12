@@ -19,10 +19,6 @@ import rx.functions.Action1;
 import ws.wamp.jawampa.PubSubData;
 import ws.wamp.jawampa.WampClient;
 import ws.wamp.jawampa.WampClientBuilder;
-import ws.wamp.jawampa.WampError;
-//import ws.wamp.jawampa.connection.IWampConnectorProvider;
-//import ws.wamp.jawampa.transport.netty.NettyWampClientConnectorProvider;
-//import ws.wamp.jawampa.transport.netty.NettyWampConnectionConfig;
 
 
 /**
@@ -64,11 +60,6 @@ public class Wamp {
         }
     }
 
-    private static final String TAG = "Wamp";
-    private static final String AnswerTopic = "com.nakadoribook.webrtc.answer";
-    private static final String OfferTopic = "com.nakadoribook.webrtc.offer";
-    private static final String CandidateTopic = "com.nakadoribook.webrtc.candidate";
-
     private static final String HandshakeEndpint = "wss://nakadoribooks-webrtc.herokuapp.com";
 
     private String roomTopic(String base){
@@ -87,7 +78,7 @@ public class Wamp {
         return roomTopic(Topic.Candidate.getString().replace("[id]", targetId));
     }
 
-    String endpointCallme(String targetId) {
+    String endpointCallme() {
         return roomTopic(Topic.Callme.getString());
     }
 
@@ -114,18 +105,6 @@ public class Wamp {
         this.callbacks = callbacks;
 
         _connect();
-    }
-
-    public void publishOffer(String sdp){
-        _publishOffer(sdp);
-    }
-
-    public void publishAnswer(String sdp){
-        _publishAnswer(sdp);
-    }
-
-    public void publishIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
-        _publishIceCandidate(sdp, sdpMid, sdpMLineIndex);
     }
 
     // implements --------
@@ -182,26 +161,18 @@ public class Wamp {
             public void call(PubSubData arg0) {
 
                 /*       ここから ------------ */
-                Log.d("Wamp", "-----------------------------");
                 ArrayNode args = arg0.arguments();
                 String targetId = args.get(0).asText();
 
                 JsonNode node = args.get(1);
-                if(node == null){
-                    Log.d("Wamp", "node is null");
-                }else {
-                    Log.d("Wamp", "node is not null");
-                    String sdpString = node.asText();
-                    try {
-                        JSONObject obj = new JSONObject(sdpString);
-                        Log.d("Wamp", "createdJson");
-                        Log.d("Wamp", obj.toString());
-                        String s = obj.getString("sdp");
-                        Log.d("Wamp sdp:", s);
-                        callbacks.onReceiveOffer(targetId, s);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+
+                String sdpString = node.asText();
+                try {
+                    JSONObject obj = new JSONObject(sdpString);
+                    String s = obj.getString("sdp");
+                    callbacks.onReceiveOffer(targetId, s);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
 
@@ -217,13 +188,21 @@ public class Wamp {
         client.makeSubscription(answerTopic).subscribe(new Action1<PubSubData>(){
             @Override
             public void call(PubSubData arg0) {
+
                 ArrayNode args = arg0.arguments();
                 String targetId = args.get(0).asText();
 
-                JsonNode json = args.get(1);
-                String sdp = json.get("sdp").asText();
+                JsonNode node = args.get(1);
+                String sdpString = node.asText();
 
-                callbacks.onReceiveAnswer(targetId, sdp);
+                try {
+                    JSONObject obj = new JSONObject(sdpString);
+                    String s = obj.getString("sdp");
+                    callbacks.onReceiveAnswer(targetId, s);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Log.d("receiveAnswer 5", "");
+                }
             }
 
         }, new Action1<Throwable>(){
@@ -239,20 +218,14 @@ public class Wamp {
             @Override
             public void call(PubSubData arg0) {
                 String jsonString = arg0.arguments().get(0).asText();
-//                Log.d("jsonString", jsonString);
                 try{
                     JSONObject json = new JSONObject(jsonString);
-//                    Log.d("json", json.toString());
                     String sdp = null;
                     if(json.has("sdp")){
                         sdp = json.getString("sdp");
                     }
                     String sdpMid = json.getString("sdpMid");
                     int sdpMLineIndex = json.getInt("sdpMLineIndex");
-
-//                    Log.d("sdp", sdp);
-//                    Log.d("sdpMLineIndex", "" + sdpMLineIndex);
-//                    Log.d("sdpMid", sdpMid);
 
                     callbacks.onIceCandidate(sdp, sdpMid, sdpMLineIndex);
                 }catch(Exception e) {
@@ -269,8 +242,7 @@ public class Wamp {
 
         // callme
 
-        String callmeTopic = endpointCallme(userId);
-        Log.d("callmeTopic", callmeTopic);
+        String callmeTopic = endpointCallme();
         client.makeSubscription(callmeTopic).subscribe(new Action1<PubSubData>() {
             @Override
             public void call(PubSubData arg0) {
@@ -278,7 +250,8 @@ public class Wamp {
                 ArrayNode args = arg0.arguments();
                 String targetId = args.get(0).asText();
 
-                if(targetId == userId){
+                if(targetId.equals(userId)){
+                    Log.d("onCallme", "cancel");
                     return;
                 }
 
@@ -312,33 +285,5 @@ public class Wamp {
         callbacks.onOpen();
     }
 
-    public void _publishOffer(String sdp){
-
-        final ObjectMapper mapper = new ObjectMapper();
-        ObjectNode node = mapper.createObjectNode();
-        node.put("type", "offer");
-        node.put("sdp", sdp);
-        client.publish(OfferTopic, node);
-    }
-
-    public void _publishAnswer(String sdp){
-        final ObjectMapper mapper = new ObjectMapper();
-        ObjectNode node = mapper.createObjectNode();
-        node.put("type", "answer");
-        node.put("sdp", sdp);
-
-        client.publish(AnswerTopic, node);
-    }
-
-    public void _publishIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
-        final ObjectMapper mapper = new ObjectMapper();
-        ObjectNode node = mapper.createObjectNode();
-        node.put("type", "candidate");
-        node.put("candidate", sdp);
-        node.put("id", sdpMid);
-        node.put("kRTCICECandidateMLineIndexKey", sdpMLineIndex);
-
-        client.publish(CandidateTopic, node);
-    }
 
 }
