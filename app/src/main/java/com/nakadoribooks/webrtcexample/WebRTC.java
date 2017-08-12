@@ -44,7 +44,7 @@ public class WebRTC implements PeerConnection.Observer {
     private final WebRTCCallbacks callbacks;
     private static PeerConnectionFactory factory;
     private PeerConnection peerConnection;
-    private static MediaStream localStream;
+    static MediaStream localStream;
     private static VideoCapturer videoCapturer;
     private static EglBase eglBase;
 
@@ -81,10 +81,6 @@ public class WebRTC implements PeerConnection.Observer {
         VideoSource localVideoSource = factory.createVideoSource(videoCapturer);
         localVideoTrack = factory.createVideoTrack("android_local_videotrack", localVideoSource);
         localStream.addTrack(localVideoTrack);
-
-        // render
-        localRenderer = setupRenderer(R.id.local_render_view, activity);
-        localVideoTrack.addRenderer(localRenderer);
 
         // audioTrack
         AudioSource audioSource = factory.createAudioSource(WebRTCUtil.mediaStreamConstraints());
@@ -165,18 +161,13 @@ public class WebRTC implements PeerConnection.Observer {
         peerConnection.addIceCandidate(iceCandidate);
     }
 
-    // implements -------------
-
-    private static VideoRenderer setupRenderer(int viewId, Activity activity){
-
-        SurfaceViewRenderer renderer = (SurfaceViewRenderer) activity.findViewById(viewId);
-        renderer.init(eglBase.getEglBaseContext(), null);
-        renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
-        renderer.setZOrderMediaOverlay(true);
-        renderer.setEnableHardwareScaler(true);
-
-        return new VideoRenderer(renderer);
+    void close(){
+        peerConnection.removeStream(WebRTC.localStream);
+        peerConnection.close();
+        peerConnection = null;
     }
+
+    // implements -------------
 
     private static VideoCapturer createCameraCapturer(CameraEnumerator enumerator) {
         return createBackCameraCapturer(enumerator);

@@ -1,22 +1,11 @@
 package com.nakadoribooks.webrtcexample;
 
-import android.os.Handler;
-import android.util.Log;
-
 import org.json.JSONObject;
 import org.webrtc.MediaStream;
-import org.webrtc.SessionDescription;
-import org.webrtc.VideoTrack;
-
-import rx.functions.Action1;
-import ws.wamp.jawampa.PubSubData;
 
 /**
  * Created by kawase on 2017/08/11.
  */
-
-
-
 
 public class Connection {
 
@@ -24,24 +13,12 @@ public class Connection {
         void onAddedStream(MediaStream mediaStream);
     }
 
-    public static class RemoteStream{
-
-        final MediaStream mediaStream;
-        final String targetId;
-
-        RemoteStream(MediaStream mediaStream, String targetId){
-            this.mediaStream = mediaStream;
-            this.targetId = targetId;
-        }
-
-    }
-
     private ConnectionCallbacks callbacks;
     private WebRTC webRTC;
     private final String myId;
     final String targetId;
     private Wamp wamp;
-    private RemoteStream remoteStream;
+    MediaStream mediaStream;
 
     Connection(final String myId, final String targetId, final Wamp wamp, final ConnectionCallbacks callbacks){
         this.myId = myId;
@@ -49,19 +26,17 @@ public class Connection {
         this.wamp = wamp;
         this.callbacks = callbacks;
 
-        subscribeCandidate();
-
         this.webRTC = new WebRTC(new WebRTC.WebRTCCallbacks(){
 
             @Override
             public void onCreateOffer(String sdp) {
-                String offerTopic = wamp.endpointOffer(targetId);
+                String offerTopic = wamp.offerTopic(targetId);
 
                 try{
                     JSONObject json = new JSONObject();
                     json.put("sdp", sdp);
                     json.put("type", "offer");
-                    wamp.client.publish(offerTopic, myId, json.toString());
+                    wamp.publishOffer(targetId, json.toString());
                 }catch(Exception e){
                     e.printStackTrace();
                 }
@@ -70,14 +45,11 @@ public class Connection {
             @Override
             public void onCreateAnswer(String sdp) {
 
-                String answerTopic = wamp.endpointAnswer(targetId);
-
                 try{
                     JSONObject json = new JSONObject();
                     json.put("sdp", sdp);
                     json.put("type", "answer");
-
-                    wamp.client.publish(answerTopic, myId, json.toString());
+                    wamp.publishAnswer(targetId, json.toString());
                 }catch(Exception e){
                     e.printStackTrace();
                 }
@@ -85,9 +57,6 @@ public class Connection {
 
             @Override
             public void didReceiveRemoteStream(MediaStream mediaStream) {
-                RemoteStream remoteStream = new RemoteStream(mediaStream, targetId);
-                Connection.this.remoteStream = remoteStream;
-
                 callbacks.onAddedStream(mediaStream);
             }
 
@@ -100,9 +69,7 @@ public class Connection {
                     json.put("sdpMid", sdpMid);
                     json.put("sdpMLineIndex", sdpMLineIndex);
 
-                    final String candidateTopic = wamp.endpointCandidate(targetId);
-                    wamp.client.publish(candidateTopic, json.toString());
-
+                    wamp.publishCandidate(targetId, json.toString());
                 }catch (Exception e){
                     e.printStackTrace();
                 }
@@ -110,31 +77,7 @@ public class Connection {
         });
     }
 
-    private void subscribeCandidate(){
-        String candidateTopic = wamp.endpointCandidate(myId);
-        wamp.client.makeSubscription(candidateTopic).subscribe(new Action1<PubSubData>() {
-            @Override
-            public void call(PubSubData pubSubData) {
-                String jsonString = pubSubData.arguments().get(0).asText();
-
-                try{
-                    JSONObject json = new JSONObject(jsonString);
-                    String sdp = json.getString("candidate");
-                    String sdpMid = json.getString("sdpMid");
-                    int sdpMLineIndex = json.getInt("sdpMLineIndex");
-                    webRTC.addIceCandidate(sdp, sdpMid, sdpMLineIndex);
-                }catch(Exception e){
-                    Log.e("---fail----", "candidate");
-                    e.printStackTrace();
-                }
-            }
-        }, new Action1<Throwable>() {
-            @Override
-            public void call(Throwable throwable) {
-
-            }
-        });
-    }
+    // ▼ interface
 
     void publishOffer(){
         webRTC.createOffer();
@@ -146,6 +89,14 @@ public class Connection {
 
     void receiveAnswer(String sdp){
         webRTC.receiveAnswer(sdp);
+    }
+
+    void receiveCandidate(String sdp, String sdpMid, int sdpMLineIndex){
+        webRTC.addIceCandidate(sdp, sdpMid, sdpMLineIndex);
+    }
+
+    void close(){
+        webRTC.close();
     }
 
 }

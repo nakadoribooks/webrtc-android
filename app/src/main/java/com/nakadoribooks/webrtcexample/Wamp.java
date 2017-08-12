@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.concurrent.TimeUnit;
@@ -34,7 +33,7 @@ public class Wamp {
 
         void onReceiveOffer(String taretId, String sdp);
 
-        void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
+        void onIceCandidate(String targetId, String candidate, String sdpMid, int sdpMLineIndex);
 
         void onReceiveCallme(String targetId);
 
@@ -45,9 +44,9 @@ public class Wamp {
 
         Callme("com.nakadoribook.webrtc.[roomId].callme"),
         Close("com.nakadoribook.webrtc.[roomId].close"),
-        Answer("com.nakadoribook.webrtc.[roomId].[id].answer"),
-        Offer("com.nakadoribook.webrtc.[roomId].[id].offer"),
-        Candidate("com.nakadoribook.webrtc.[roomId].[id].candidate");
+        Answer("com.nakadoribook.webrtc.[roomId].[userId].answer"),
+        Offer("com.nakadoribook.webrtc.[roomId].[userId].offer"),
+        Candidate("com.nakadoribook.webrtc.[roomId].[userId].candidate");
 
         private final String text;
 
@@ -63,64 +62,50 @@ public class Wamp {
     private static final String HandshakeEndpint = "wss://nakadoribooks-webrtc.herokuapp.com";
 
     private String roomTopic(String base){
-        return base.replace("[roomId]", roomKey);
+        return base.replace("[roomId]", roomId);
     }
 
-    String endpointAnswer(String targetId){
-        return roomTopic(Topic.Answer.getString().replace("[id]", targetId));
+    String answerTopic(String userId){
+        return roomTopic(Topic.Answer.getString().replace("[userId]", userId));
     }
 
-    String endpointOffer(String targetId) {
-        return roomTopic(Topic.Offer.getString().replace("[id]", targetId));
+    String offerTopic(String userId) {
+        return roomTopic(Topic.Offer.getString().replace("[userId]", userId));
     }
 
-    String endpointCandidate(String targetId) {
-        return roomTopic(Topic.Candidate.getString().replace("[id]", targetId));
+    String candidateTopic(String userId) {
+        return roomTopic(Topic.Candidate.getString().replace("[userId]", userId));
     }
 
-    String endpointCallme() {
+    String callmeTopic() {
         return roomTopic(Topic.Callme.getString());
     }
 
-    String endpointClose(String targetId) {
+    String closeTopic(String userId) {
         return roomTopic(Topic.Callme.getString());
     }
-
 
     private final Activity activity;
-    WampClient client;
+    private WampClient client;
     private WampCallbacks callbacks;
-    private String roomKey;
+    private String roomId;
     private String userId;
 
-    Wamp(Activity activity){
+    Wamp(Activity activity, String roomId, String userId, WampCallbacks callbacks){
         this.activity = activity;
+        this.roomId = roomId;
+        this.userId = userId;
+        this.callbacks = callbacks;
     }
 
     // interface -------
 
-    public void connect(String roomKey, String userId, WampCallbacks callbacks){
-        this.roomKey = roomKey;
-        this.userId = userId;
-        this.callbacks = callbacks;
-
-        _connect();
-    }
-
-    // implements --------
-
-    private void _connect(){
+    public void connect(){
         WampClientBuilder builder = new WampClientBuilder();
 
         try {
-//            builder.withUri("ws://192.168.1.2:8000")
-//            IWampConnectorProvider connectorProvider = new NettyWampClientConnectorProvider();
-//            NettyWampConnectionConfig connectionConfiguration = new NettyWampConnectionConfig();
             builder
-//                    .withConnectorProvider(connectorProvider)
-//                    .withConnectionConfiguration(connectionConfiguration)
-//                    .withUri(HandshakeEndpint)
-                    .withUri("wss://nakadoribooks-webrtc.herokuapp.com")
+                    .withUri(HandshakeEndpint)
                     .withRealm("realm1")
                     .withInfiniteReconnects()
                     .withReconnectInterval(3, TimeUnit.SECONDS);
@@ -147,15 +132,39 @@ public class Wamp {
                 });
 
         client.open();
-
     }
+
+    void publishCallme(){
+        String callmeTopic = callmeTopic();
+        final ObjectMapper mapper = new ObjectMapper();
+        ObjectNode args = mapper.createObjectNode();
+        args.put("targetId", userId);
+        client.publish(callmeTopic, userId);
+    }
+
+    void publishOffer(String targetId, String sdp){
+        String topic = offerTopic(targetId);
+        client.publish(topic, this.userId, sdp);
+    }
+
+    void publishAnswer(String targetId, String sdp){
+        String topic = answerTopic(targetId);
+        client.publish(topic, this.userId, sdp);
+    }
+
+    void publishCandidate(String targetId, String candidate){
+        String topic = candidateTopic(targetId);
+        client.publish(topic, this.userId, candidate);
+    }
+
+    // implements --------
 
     private void onConnectWamp(){
 
         // ▼ subscribe -----
 
         // offer
-        String offerTopic = endpointOffer(userId);
+        String offerTopic = offerTopic(userId);
         client.makeSubscription(offerTopic).subscribe(new Action1<PubSubData>(){
             @Override
             public void call(PubSubData arg0) {
@@ -184,7 +193,7 @@ public class Wamp {
         });
 
         // answer
-        String answerTopic = endpointAnswer(userId);
+        String answerTopic = answerTopic(userId);
         client.makeSubscription(answerTopic).subscribe(new Action1<PubSubData>(){
             @Override
             public void call(PubSubData arg0) {
@@ -213,21 +222,23 @@ public class Wamp {
         });
 
         // candidate
-        String candidateTopic = endpointCandidate(userId);
+        String candidateTopic = candidateTopic(userId);
         client.makeSubscription(candidateTopic).subscribe(new Action1<PubSubData>(){
             @Override
             public void call(PubSubData arg0) {
-                String jsonString = arg0.arguments().get(0).asText();
+                String targetId = arg0.arguments().get(0).asText();
+                String jsonString = arg0.arguments().get(1).asText();
                 try{
                     JSONObject json = new JSONObject(jsonString);
-                    String sdp = null;
-                    if(json.has("sdp")){
-                        sdp = json.getString("sdp");
+                    String candidate = null;
+                    if(!json.has("candidate")){
+                        return;
                     }
+                    candidate = json.getString("candidate");
                     String sdpMid = json.getString("sdpMid");
                     int sdpMLineIndex = json.getInt("sdpMLineIndex");
 
-                    callbacks.onIceCandidate(sdp, sdpMid, sdpMLineIndex);
+                    callbacks.onIceCandidate(targetId, candidate, sdpMid, sdpMLineIndex);
                 }catch(Exception e) {
                     e.printStackTrace();
                 }
@@ -241,8 +252,7 @@ public class Wamp {
         });
 
         // callme
-
-        String callmeTopic = endpointCallme();
+        String callmeTopic = callmeTopic();
         client.makeSubscription(callmeTopic).subscribe(new Action1<PubSubData>() {
             @Override
             public void call(PubSubData arg0) {
@@ -265,7 +275,7 @@ public class Wamp {
         });
 
         // close
-        String closeTopic = endpointClose(userId);
+        String closeTopic = closeTopic(userId);
         client.makeSubscription(closeTopic).subscribe(new Action1<PubSubData>() {
             @Override
             public void call(PubSubData arg0) {

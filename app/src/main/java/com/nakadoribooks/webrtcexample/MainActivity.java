@@ -1,15 +1,11 @@
 package com.nakadoribooks.webrtcexample;
 
 import android.Manifest;
-import android.app.Activity;
-import android.graphics.Color;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
 import android.widget.GridLayout;
-import android.widget.LinearLayout;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -21,7 +17,6 @@ import org.webrtc.SurfaceViewRenderer;
 import org.webrtc.VideoRenderer;
 import org.webrtc.VideoTrack;
 
-import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.UUID;
 
@@ -53,8 +48,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // wamp
-        wamp = new Wamp(this);
+        setupWamp();
 
         // checkPermission → onRequestPermissionsResult → startWebRTC
         checkPermission();
@@ -64,12 +58,18 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode,
                                            String permissions[], int[] grantResults) {
         if (requestCode != REQUEST_CODE_CAMERA_PERMISSION) {
-            connect();
             return;
         }
 
         WebRTC.setup(this, eglBase);
-        connect();
+
+        // show localView
+        MediaStream localStream = WebRTC.localStream;
+        SurfaceViewRenderer renderer = (SurfaceViewRenderer) findViewById(R.id.local_render_view);
+        VideoRenderer localRenderer = setupRenderer(renderer);
+        localStream.videoTracks.getFirst().addRenderer(localRenderer);
+
+        wamp.connect();
     }
 
     private void checkPermission(){
@@ -77,21 +77,13 @@ public class MainActivity extends AppCompatActivity {
         ActivityCompat.requestPermissions(this, permissioins, REQUEST_CODE_CAMERA_PERMISSION);
     }
 
-    private void connect(){
-
-//        String roomKey = "-Kr-JqhdoZ1YtdeO0-9r"; // とりあえず固定
-        String roomKey = "abcdef"; // とりあえず固定
-
-        wamp.connect(roomKey, userId, new Wamp.WampCallbacks() {
+    private void setupWamp(){
+        // wamp
+        String roomId = "abcdef"; // とりあえず固定
+        wamp = new Wamp(this, roomId, userId, new Wamp.WampCallbacks() {
             @Override
             public void onOpen() {
-                String callmeTopic = wamp.endpointCallme();
-
-                final ObjectMapper mapper = new ObjectMapper();
-                ObjectNode args = mapper.createObjectNode();
-                args.put("targetId", userId);
-                wamp.client.publish(callmeTopic, userId);
-
+                wamp.publishCallme();
             }
 
             @Override
@@ -113,8 +105,9 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex) {
-
+            public void onIceCandidate(String targetId, String candidate, String sdpMid, int sdpMLineIndex) {
+                Connection connection = createConnection(targetId);
+                connection.receiveCandidate(candidate, sdpMid, sdpMLineIndex);
             }
 
             @Override
