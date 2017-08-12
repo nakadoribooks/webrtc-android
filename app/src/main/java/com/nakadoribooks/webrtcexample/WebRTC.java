@@ -15,14 +15,7 @@ import java.util.List;
  * Created by kawase on 2017/04/13.
  */
 
-public class WebRTC implements PeerConnection.Observer {
-
-    public static interface WebRTCCallbacks{
-        void onCreateOffer(String sdp);
-        void onCreateAnswer(String sdp);
-        void didReceiveRemoteStream(MediaStream mediaStream);
-        void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
-    }
+public class WebRTC implements PeerConnection.Observer, WebRTCInterface {
 
     private static abstract class SkeletalSdpObserver implements SdpObserver{
 
@@ -40,7 +33,6 @@ public class WebRTC implements PeerConnection.Observer {
 
     private static final String TAG = "WebRTC";
 
-    private static Activity activity;
     private final WebRTCCallbacks callbacks;
     private static PeerConnectionFactory factory;
     private PeerConnection peerConnection;
@@ -65,7 +57,6 @@ public class WebRTC implements PeerConnection.Observer {
     // interface -----------------
 
     static void setup(Activity activity, EglBase eglBase){
-        WebRTC.activity = activity;
         WebRTC.eglBase = eglBase;
 
         // initialize Factory
@@ -156,12 +147,12 @@ public class WebRTC implements PeerConnection.Observer {
         }, remoteDescription);
     }
 
-    void addIceCandidate(String sdp, String sdpMid, int sdpMLineIndex){
+    public void receiveCandidate(String sdp, String sdpMid, int sdpMLineIndex){
         IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, sdp);
         peerConnection.addIceCandidate(iceCandidate);
     }
 
-    void close(){
+    public void close(){
         peerConnection.removeStream(WebRTC.localStream);
         peerConnection.close();
         peerConnection = null;

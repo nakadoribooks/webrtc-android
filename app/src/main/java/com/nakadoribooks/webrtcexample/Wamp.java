@@ -24,40 +24,7 @@ import ws.wamp.jawampa.WampClientBuilder;
  * Created by kawase on 2017/04/15.
  */
 
-public class Wamp {
-
-    public static interface WampCallbacks {
-        void onOpen();
-
-        void onReceiveAnswer(String targetId, String sdp);
-
-        void onReceiveOffer(String taretId, String sdp);
-
-        void onIceCandidate(String targetId, String candidate, String sdpMid, int sdpMLineIndex);
-
-        void onReceiveCallme(String targetId);
-
-        void onCloseConnection(String targetId);
-    }
-
-    public enum Topic {
-
-        Callme("com.nakadoribook.webrtc.[roomId].callme"),
-        Close("com.nakadoribook.webrtc.[roomId].close"),
-        Answer("com.nakadoribook.webrtc.[roomId].[userId].answer"),
-        Offer("com.nakadoribook.webrtc.[roomId].[userId].offer"),
-        Candidate("com.nakadoribook.webrtc.[roomId].[userId].candidate");
-
-        private final String text;
-
-        private Topic(final String text) {
-            this.text = text;
-        }
-
-        public String getString() {
-            return this.text;
-        }
-    }
+public class Wamp implements WampInterface {
 
     private static final String HandshakeEndpint = "wss://nakadoribooks-webrtc.herokuapp.com";
 
@@ -134,7 +101,7 @@ public class Wamp {
         client.open();
     }
 
-    void publishCallme(){
+    public void publishCallme(){
         String callmeTopic = callmeTopic();
         final ObjectMapper mapper = new ObjectMapper();
         ObjectNode args = mapper.createObjectNode();
@@ -142,17 +109,17 @@ public class Wamp {
         client.publish(callmeTopic, userId);
     }
 
-    void publishOffer(String targetId, String sdp){
+    public void publishOffer(String targetId, String sdp){
         String topic = offerTopic(targetId);
         client.publish(topic, this.userId, sdp);
     }
 
-    void publishAnswer(String targetId, String sdp){
+    public void publishAnswer(String targetId, String sdp){
         String topic = answerTopic(targetId);
         client.publish(topic, this.userId, sdp);
     }
 
-    void publishCandidate(String targetId, String candidate){
+    public void publishCandidate(String targetId, String candidate){
         String topic = candidateTopic(targetId);
         client.publish(topic, this.userId, candidate);
     }
@@ -230,15 +197,15 @@ public class Wamp {
                 String jsonString = arg0.arguments().get(1).asText();
                 try{
                     JSONObject json = new JSONObject(jsonString);
-                    String candidate = null;
+                    String sdp = null;
                     if(!json.has("candidate")){
                         return;
                     }
-                    candidate = json.getString("candidate");
+                    sdp = json.getString("candidate");
                     String sdpMid = json.getString("sdpMid");
                     int sdpMLineIndex = json.getInt("sdpMLineIndex");
 
-                    callbacks.onIceCandidate(targetId, candidate, sdpMid, sdpMLineIndex);
+                    callbacks.onIceCandidate(targetId, sdp, sdpMid, sdpMLineIndex);
                 }catch(Exception e) {
                     e.printStackTrace();
                 }

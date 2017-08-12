@@ -7,30 +7,24 @@ import org.webrtc.MediaStream;
  * Created by kawase on 2017/08/11.
  */
 
-public class Connection {
-
-    public static interface ConnectionCallbacks{
-        void onAddedStream(MediaStream mediaStream);
-    }
+public class Connection implements ConnectionInterface {
 
     private ConnectionCallbacks callbacks;
-    private WebRTC webRTC;
+    private WebRTCInterface webRTC;
     private final String myId;
-    final String targetId;
-    private Wamp wamp;
-    MediaStream mediaStream;
+    private final String _targetId;
+    private WampInterface wamp;
 
-    Connection(final String myId, final String targetId, final Wamp wamp, final ConnectionCallbacks callbacks){
+    Connection(final String myId, final String targetId, final WampInterface wamp, final ConnectionCallbacks callbacks){
         this.myId = myId;
-        this.targetId = targetId;
+        this._targetId = targetId;
         this.wamp = wamp;
         this.callbacks = callbacks;
 
-        this.webRTC = new WebRTC(new WebRTC.WebRTCCallbacks(){
+        this.webRTC = new WebRTC(new WebRTCCallbacks(){
 
             @Override
             public void onCreateOffer(String sdp) {
-                String offerTopic = wamp.offerTopic(targetId);
 
                 try{
                     JSONObject json = new JSONObject();
@@ -65,6 +59,7 @@ public class Connection {
 
                 final JSONObject json = new JSONObject();
                 try{
+                    json.put("type", "candidate");
                     json.put("candidate", sdp);
                     json.put("sdpMid", sdpMid);
                     json.put("sdpMLineIndex", sdpMLineIndex);
@@ -79,23 +74,27 @@ public class Connection {
 
     // ▼ interface
 
-    void publishOffer(){
+    public String targetId(){
+        return _targetId;
+    }
+
+    public void publishOffer(){
         webRTC.createOffer();
     }
 
-    void publishAnswer(String remoteSdp){
-        webRTC.receiveOffer(remoteSdp);
+    public void receiveOffer(String sdp){
+        webRTC.receiveOffer(sdp);
     }
 
-    void receiveAnswer(String sdp){
+    public void receiveAnswer(String sdp){
         webRTC.receiveAnswer(sdp);
     }
 
-    void receiveCandidate(String sdp, String sdpMid, int sdpMLineIndex){
-        webRTC.addIceCandidate(sdp, sdpMid, sdpMLineIndex);
+    public void receiveCandidate(String candidate, String sdpMid, int sdpMLineIndex){
+        webRTC.receiveCandidate(candidate, sdpMid, sdpMLineIndex);
     }
 
-    void close(){
+    public void close(){
         webRTC.close();
     }
 

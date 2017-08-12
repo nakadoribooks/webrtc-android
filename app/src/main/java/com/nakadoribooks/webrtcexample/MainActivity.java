@@ -7,9 +7,6 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.GridLayout;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-
 import org.webrtc.EglBase;
 import org.webrtc.MediaStream;
 import org.webrtc.RendererCommon;
@@ -22,24 +19,11 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
-    private enum State{
-        Disconnected
-        , Connecting
-        , Connected
-        , Offering
-        , ReceivedOffer
-        , CreatingAnswer
-        , Done
-    }
-
-    private static final String TAG = "MainActivity";
     private static final int REQUEST_CODE_CAMERA_PERMISSION = 1;
-    private WebRTC webRTC;
-    private Wamp wamp;
+    private WampInterface wamp;
 
     private ArrayList<Connection> connectionList = new ArrayList<Connection>();
 
-    private boolean typeOffer = false;
     private String userId = UUID.randomUUID().toString().substring(0, 8);
     private EglBase eglBase = EglBase.create();
 
@@ -80,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
     private void setupWamp(){
         // wamp
         String roomId = "abcdef"; // とりあえず固定
-        wamp = new Wamp(this, roomId, userId, new Wamp.WampCallbacks() {
+        wamp = new Wamp(this, roomId, userId, new WampCallbacks() {
             @Override
             public void onOpen() {
                 wamp.publishCallme();
@@ -101,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onReceiveOffer(String targetId, String sdp) {
                 Connection connection = createConnection(targetId);
-                connection.publishAnswer(sdp);
+                connection.receiveOffer(sdp);
             }
 
             @Override
@@ -126,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
     private int remoteIndex = 0;
 
     private Connection createConnection(String targetId){
-        Connection connection = new Connection(userId, targetId, wamp, new Connection.ConnectionCallbacks() {
+        Connection connection = new Connection(userId, targetId, wamp, new ConnectionCallbacks() {
             @Override
             public void onAddedStream(MediaStream mediaStream) {
                 if (mediaStream.videoTracks.size() == 0){
@@ -176,7 +160,7 @@ public class MainActivity extends AppCompatActivity {
 
         for(int i=0,max=connectionList.size();i<max;i++){
             Connection connection = connectionList.get(i);
-            if (connection.targetId.equals(targetId)){
+            if (connection.targetId().equals(targetId)){
                 return connection;
             }
         }
