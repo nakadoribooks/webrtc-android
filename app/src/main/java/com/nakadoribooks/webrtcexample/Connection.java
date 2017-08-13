@@ -50,7 +50,7 @@ public class Connection implements ConnectionInterface {
             }
 
             @Override
-            public void didReceiveRemoteStream(MediaStream mediaStream) {
+            public void onAddedStream(MediaStream mediaStream) {
                 callbacks.onAddedStream(mediaStream);
             }
 

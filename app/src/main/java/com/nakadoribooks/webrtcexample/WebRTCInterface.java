@@ -10,7 +10,7 @@ interface WebRTCCallbacks{
 
     void onCreateOffer(String sdp);
     void onCreateAnswer(String sdp);
-    void didReceiveRemoteStream(MediaStream mediaStream);
+    void onAddedStream(MediaStream mediaStream);
     void onIceCandidate(String sdp, String sdpMid, int sdpMLineIndex);
 
 }

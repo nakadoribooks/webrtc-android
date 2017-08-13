@@ -208,7 +208,7 @@ public class WebRTC implements PeerConnection.Observer, WebRTCInterface {
 
     @Override
     public void onAddStream(MediaStream mediaStream) {
-        callbacks.didReceiveRemoteStream(mediaStream);
+        callbacks.onAddedStream(mediaStream);
     }
 }
 

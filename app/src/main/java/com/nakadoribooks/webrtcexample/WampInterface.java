@@ -26,15 +26,10 @@ enum Topic {
 interface WampCallbacks {
 
     void onOpen();
-
     void onReceiveAnswer(String targetId, String sdp);
-
     void onReceiveOffer(String taretId, String sdp);
-
     void onIceCandidate(String targetId, String sdp, String sdpMid, int sdpMLineIndex);
-
     void onReceiveCallme(String targetId);
-
     void onCloseConnection(String targetId);
 
 }
